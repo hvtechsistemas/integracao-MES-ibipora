@@ -1,0 +1,121 @@
+#include "totvs.ch"
+#include "tlpp-core.th"
+#include "tlpp-rest.th"
+#include "topconn.ch"
+#INCLUDE "RPTDEF.CH"
+
+
+namespace pcp.syneco
+
+
+/*/{protheus.doc} label
+
+Método POST para impressao de etiqueta do processo Syneco
+Usando REST Versão 2.0 com Annotation
+
+@type function
+@author Rafael Pimenta
+@since 04/10/2024
+@version P12
+@database SQL
+
+/*/ 
+@POST(endpoint="syneco/v1/label", description="Auth all requests")
+User Function imprimietiquetasyneco()
+    Local jResponse := JsonObject():New() as object
+    Local cBody := "" as character
+
+    cBody       := DecodeUTF8(oRest:getBodyRequest(), "cp1252")
+    aRetorno    := GravaCB0(cBody)
+
+    If  aRetorno[1]
+        jResponse['code']           := '200'
+        jResponse['message']        := ""
+        nStatusCode                 := 200
+    Else 
+        jResponse['code']           := '400'
+        jResponse['message']        := aRetorno[2]
+        nStatusCode:= 400
+    Endif
+        
+    oRest:appendKeyHeaderResponse("Content-Type","application/json")
+    oRest:setStatusCode(nStatusCode)
+    oRest:setResponse(jResponse:toJson())
+
+    FreeObj(jResponse)
+
+Return
+
+static function GravaCB0(cBody)
+    Local oRequest := nil as object
+    Local aCpoReq := {} as array
+    Local nRecord := 0 as numeric
+    Local cErro := "" as character
+    Local cNumCB0 := "" as character
+    Local cCpoCB0 := "" as character
+    Local cCpoAux := "" as character  
+    Local lRet := .t. as logical    
+
+    oRequest := JsonObject():New()
+	If	oRequest:FromJson(cBody) == Nil
+    
+        While .T.
+            cNumCB0 := GetSxeNum("CB0","CB0_CODETI")   
+            ConfirmSx8()
+            If !ValidSupCB0(cNumCB0)
+                Exit 
+            Endif
+        EndDo
+
+        aCpoReq := oRequest:GetNames()
+        
+        CB0->(RecLock("CB0",.t.))
+            for nRecord := 1 to len(aCpoReq)
+                
+                cCpoCB0 := aCpoReq[nRecord]
+
+                if  Alltrim(cCpoCB0) == "CB0_CODETI"
+                    CB0->CB0_CODETI := cNumCB0
+                Elseif Alltrim(cCpoCB0) == "CB0_FILIAL"
+                    CB0->CB0_FILIAL := xFilial("CB0")
+                else                
+                    cCpoAux    := "CB0->"+Alltrim(cCpoCB0)
+                    &(cCpoAux) := iif(GetSx3Cache(cCpoCB0,"X3_TIPO") =="D",StoD(oRequest[cCpoCB0]),oRequest[cCpoCB0])
+                endif
+            next nRecord
+        CB0->(MsUnlock())
+
+    Else
+        cErro := "Json inválido!"
+        lRet := .f.
+    EndIf
+	
+	FreeObj(oRequest)
+    
+return{lRet,cErro}
+
+
+/*
+	Valida se o ID da etiqueta ja existe na filial pra não estourar erro de chave duplicada
+*/
+Static Function ValidSupCB0(cNumID)
+	Local cQry := ""
+	Local cAlias := GetNextAlias()
+    Local lRet := .F.
+	
+	cQry := " SELECT * "
+	cQry += " FROM "+RetSqlName("CB0")
+	cQry += " WHERE CB0_FILIAL='"+xFilial("CB0")+"'"
+	cQry += " AND CB0_CODETI='"+cNumID+"'"
+	cQry += " AND D_E_L_E_T_ = ' ' "
+
+	TcQuery cQry New Alias &cAlias
+
+	DBSelectArea(cAlias)
+    (cAlias)->(DBGoTop())
+	If !(cAlias)->(EOF()) .AND. !(cAlias)->(BOF())
+		lRet := .T.
+	Endif  
+	(cAlias)->(DBCloseArea())
+
+return(lRet)

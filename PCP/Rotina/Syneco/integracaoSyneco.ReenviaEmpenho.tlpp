@@ -1,0 +1,218 @@
+#INCLUDE "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+#Include "TBICONN.ch"
+
+namespace integracaoSyneco
+
+/*/{Protheus.doc} ReenviaEmpenho
+Função que refaz o Envio do Empenho da  OP no reprocesso do monitor integracao
+@type function
+@version 1.0 
+@author Bruno Aguiar
+@since	11/09/2024
+@return variant, Null
+
+    nChamada := 1 : Via Job
+    nChamada := 2 : Via Menu
+    nChamada := 3 : Via Reenvio
+/*/
+
+User Function ReenviaEmpenho(nChamada,cDeFilial, cAteFilial, cDeOP, cAteOP)
+    Local cBcoDados     := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")   as character //Conexão no DbAccess com a outra base de Dados
+    Local cServer       := GetNewPar("MV_ZZIPSKA", "10.11.10.25")                as character //Servidor que está configurado o DbAccess
+    Local nPorta        := GetNewPar("MV_ZZPOSKA ",  9099 )                         as numeric //Porta da conexão do DbAccess
+    Local nHandle       := 0                            as numeric //Ponteiro que armazenará a conexão
+    Local aItems        := {}                           as array
+    Local cQuery        := ""                           as character
+    Local cAlias        := GetNextAlias()
+    Private cEmprLog    := ""                           as character
+    Private cOps        := {}                           as array            
+    Default nChamada    := 1
+    Default cDeFilial   := ""
+    Default cAteFilial  := ""
+    Default cDeOp       := ""  
+    Default cAteOp      := ""
+
+    nHandle  := TcLink(cBcoDados, cServer, nPorta)
+
+    If nHandle < 0
+        If nChamada == 2 .Or. nChamada == 3
+            MsgInfo("Não foi possível conectar! Erro: " + cValToChar(nHandle), "Atenção") 
+        Else
+            ConOut("Não foi possível conectar! Erro: " + cValToChar(nHandle))
+        EndIf
+    Else 
+
+        cQuery := " SELECT * FROM SSPCCMImportRawMaterial  "    + CRLF
+        cQuery += " WHERE                                  "    + CRLF
+        cQuery += " STATUS = 0                             "    + CRLF
+
+        If nChamada == 1 
+            cQuery += " AND LEFT(OP, 1) = '1'                 "    + CRLF
+        Else
+
+            If nChamada == 2      
+                cQuery += " AND LEFT(OP, 1) BETWEEN '" + Right(cDeFilial,1) + "'"       + CRLF
+                cQuery += "  AND  '" + Right(cAteFilial,1) + "'"                        + CRLF
+
+                If cDeFilial <> cAteFilial          
+                    cQuery += " AND SUBSTRING(OP,2,12) BETWEEN '" +AllTrim(cDeOP) + "'"     + CRLF
+                    cQuery += "  AND '" + AllTrim(cAteOP)+ "' "                             + CRLF
+                    
+                Else
+                    cQuery += " AND OP BETWEEN '" +Right(cDeFilial,1)+AllTrim(cDeOP) + "'"  + CRLF
+                    cQuery += "  AND '" +Right(cDeFilial,1)+AllTrim(cAteOP)+ "' "           + CRLF
+                EndIf
+
+            Elseif nChamada == 3
+                cQuery += " AND LEFT(OP, 1) = '" + Substr(ZC2->ZC2_OP,4,1) +    "'"         + CRLF
+                cQuery += " AND OP = '" + Substr(ZC2->ZC2_OP,4,15) +            "'"         + CRLF
+            EndIf
+        EndIf
+
+        cQuery += " AND ENCERR = '1'                       "    + CRLF                          
+        cQuery += " ORDER BY OP, OPER                      "    + CRLF
+
+        If TcSqlExec(cQuery) < 0
+            If nChamada == 1
+                ConOut("Falha ao realizar a consulta: " + TCSQLError())
+            Else
+                MsgInfo("Falha ao realizar a consulta: " + TCSQLError(), "Atenção")
+            EndIf
+            TCUnlink(nHandle)
+
+        Else
+
+            PlsQuery(cQuery, cAlias)
+            DBSelectArea(cAlias)
+            (cAlias)->(DBGoTop())
+            If (cAlias)->(!EoF())  
+
+                If nChamada == 2 .Or. nChamada == 3
+                    cEmprLog := FWCodEmp()   
+                EndIf
+
+                aItems := ExecutaQuery(@cAlias,nChamada)
+                TCUnlink(nHandle)
+                ProcessaDados(aItems, nChamada)
+            EndIf
+
+            If  Select(cAlias) > 0
+                (cAlias)->(DBCloseArea())
+            Endif
+
+        EndIf
+    EndIf
+
+Return 
+
+
+/*
+    Executando a consulta realizada no Banco da SKA para retornar array com dados do ExecAuto
+*/
+Static Function ExecutaQuery(cQuery,nChamada)
+    Local aItems        := {}
+    Default cQuery      := ""
+    Default nChamada    := 0
+
+    aItems := {}
+
+    If (cAlias)->(!EoF())
+        While (cAlias)->(!EoF())
+            Aadd(aItems,;
+                {   xFilial("SBC")                                                   ,;  //PadR("010"+ Substr((cAlias)->OP,1,1)      , TamSX3("BC_FILIAL")[1] )
+                    SubStr((cAlias)->OP,2,11)                                        ,;
+                    PadR((cAlias)->CODPECA                 , TamSX3("BC_PRODUTO")[1]),;
+                    (cAlias)->ARMAZEM                                                ,;
+                    (cAlias)->DT_EMPENHO                                             ,;
+                    (cAlias)->QUANTITY                                               ,;
+                    (cAlias)->CODIGO_LOTE                                            })
+
+            (cAlias)->(DbSkip())
+        EndDo
+    Else
+        lRet := .F.
+        If nChamada == 1
+            ConOut("Não existem dados para serem integrados!")
+        Else
+            MsgInfo("Não existem dados para serem integrados!", "Atenção")
+        EndIf
+    EndIf
+
+    If  Select(cAlias) > 0
+        (cAlias)->(DBCloseArea())
+    Endif
+
+Return aItems
+
+
+
+/*
+ Régua Inc. para processo de dados
+*/
+Static Function ProcessaDados(aItems, nChamada)
+    Default aItems      := {}
+    Default nChamada    := 0
+
+	Processa( { || ExecAuto(aItems, nChamada) }, 'Carregando...', 'Aguarde...')
+
+Return 
+
+
+
+/*
+    Realizando ExecAuto MATA381 para apontamento de Empenho
+*/
+
+Static Function ExecAuto(aDados, nChamada)
+    Local aCab          := {}
+    Local aItems        := {}
+    Local nCont         := 0
+    Local lRet          := .T.
+    Local cEmprLog      := ""
+    Private lMsErroAuto := .F.
+    Private lMsHelpAuto := .T.
+    Default aDados      := {}
+    Default nChamada    := 0
+
+
+    If nChamada == 2 .Or. nChamada == 3
+        cEmprLog := FWCodEmp()   
+    EndIf
+
+    For nCont := 1 To Len(aDados)
+        aCab    := {}
+        aItems  := {}
+
+        aCab:= {;
+                {"D4_OP"      ,aDados[nCont][2]     ,NIL}}
+
+        aAdd(aItems,{"D4_OP"     ,aDados[nCont][2]     ,NIL})
+        aAdd(aItems,{"D4_COD"    ,aDados[nCont][3]     ,NIL})
+        aAdd(aItems,{"D4_LOCAL"  ,aDados[nCont][4]     ,NIL})
+        aAdd(aItems,{"D4_DATA"   ,aDados[nCont][5]     ,NIL})
+        aAdd(aItems,{"D4_QTDEORI",aDados[nCont][6]     ,NIL})
+        aAdd(aItems,{"D4_QUANT"  ,aDados[nCont][6]     ,NIL})
+        aAdd(aItems,{"D4_TRT"    ,aDados[nCont][3]     ,NIL})
+
+        MSExecAuto({|x,y,z| MATA381(x,y,z)}, aCab, aItems, 3)
+
+        If lMsErroAuto
+            lRet    := .F.
+            cError  := MostraErro("/dirdoc", "error.log")
+            integracaoSyneco.U_GravaLog(cOPZC5+"-"+aDados[nCont][4]+": "+cError, lRet, "1", "4", "R", aDados[nCont][10],cOP)
+            DisarmTransaction()
+            Exit
+        Else
+            cMsgResultado := "Apontamento de Empenho/Lote realizado com sucesso."
+            ConOut(Repl("-", 80))
+            ConOut(PadC("Apontamento de Empenho/Lote realizado com sucesso", 80))
+            ConOut(PadC("Fim: " + Time(), 80))
+            ConOut(Repl("-", 80))
+            integracaoSyneco.U_GravaLog(cOPZC5+"-"+aDados[nCont][4]+": "+cMsgResultado, lRet, "1", "4", "R", aDados[nCont][10],cOP)            
+        EndIf
+
+    Next nCont
+Return lRet

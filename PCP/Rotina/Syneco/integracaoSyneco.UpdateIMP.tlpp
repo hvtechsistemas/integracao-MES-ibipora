@@ -1,0 +1,44 @@
+#INCLUDE "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+#Include "TBICONN.ch"
+
+namespace integracaoSyneco
+
+User Function UpdateIMP(cOP, cOperacao)
+    Local cBcoDados     := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")   as character //Conexão no DbAccess com a outra base de Dados
+    Local cServer       := GetNewPar("MV_ZZIPSKA", "10.11.10.25")                as character //Servidor que está configurado o DbAccess
+    Local nPorta        := GetNewPar("MV_ZZPOSKA ",  9099 )                         as numeric //Porta da conexão do DbAccess
+    Local nHandle       := 0                            as numeric //Ponteiro que armazenará a conexão
+    Local lRet          := .T.                          as logical
+    Default cOp         := ""
+    Default cOperacao   := ""
+
+
+    nHandle  := TcLink(cBcoDados, cServer, nPorta)
+    
+    If nHandle < 0
+        If nChamada == 2 .Or. nChamada == 3
+            MsgInfo("Não foi possivel conectar! Erro: " + cValToChar(nHandle), "Atenção") 
+        Else
+            ConOut("Não foi possivel conectar! Erro: " + cValToChar(nHandle))
+        EndIf
+    Else 
+
+        cSql := "UPDATE SSIMPORT SET "              + CRLF
+        cSql += "ACAO = 3"                          + CRLF
+        cSql += "WHERE OP = '" + cOP + "'"          + CRLF
+        cSql += "AND OPER = '" + cOperacao + "'"    + CRLF
+
+        If TcSqlExec(cSql) < 0
+            cMsgResultado := "Falha ao realizar alteração: " + TCSQLError()
+            lRet    := .F.
+        Else
+            cMsgResultado := "Integrado com sucesso."
+        EndIf
+    EndIf
+
+    TCUnlink(nHandle)
+
+Return lRet

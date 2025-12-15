@@ -1,0 +1,216 @@
+#include "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+
+namespace integracaoSyneco
+
+/*/{Protheus.doc} InsereOp
+Função que realiza a inserção na tabela SSPImport Syneco
+@type function
+@version 1;0
+@author Bruno
+@since 04/09/2024
+@See MTA650I
+@return variant, Nul
+/*/
+User Function InsereOp(cChamada)
+    Local nHndERP           := AdvConnection() as array
+    Local aArea             := GetArea() as array
+    Local cBcoDados         := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG") as character //Conexão no DbAccess com a outra base de Dados
+    Local cServer           := GetNewPar("MV_ZZIPSKA", "10.11.10.25") as character //Servidor que está configurado o DbAccess
+    Local nPorta            := GetNewPar("MV_ZZPOSKA ",  9099 ) as numeric //Porta da conexão do DbAccess        
+    Local nHandle           := 0 as numeric //Ponteiro que armazenará a conexão
+    Local cMsgResultado     := "" as character
+    Local cProdAux3         := "" as character
+    Local lRet              := .T. as logical
+    
+    Private cDescPeca       := "" as character
+    Private cCentroTrab     := "" as character
+    Private cOP             := "" as character 
+    Private cProduto        := "" as character
+    Private nCycleTime      := 0 as numeric 
+    Default cChamada        := "1"
+    
+    cOP   := Right(SC2->C2_FILIAL,1)+SC2->C2_NUM+SC2->C2_ITEM+SC2->C2_SEQUEN
+
+    DbSelectArea("SC2")
+    DbSetOrder(6)
+    If SC2->(DbSeek(FWxFilial('SC2') + SC2->C2_NUM + SC2->C2_ITEM + SC2->C2_SEQUEN + SC2->C2_PRODUTO)) 
+
+        cProduto := SC2->C2_PRODUTO
+        
+        While SC2->(!EoF()) .And. SC2->C2_FILIAL == FWxFilial('SC2') .And. SC2->C2_NUM == SubStr(cOp,2,6) .And. SC2->C2_SEQUEN == SubStr(cOp,10,3) .And. SC2->C2_PRODUTO == cProduto
+
+            If !Empty(SC2->C2_ROTEIRO)
+
+                DbSelectArea("SG2")
+                DbSetOrder(1)
+                If SG2->(DbSeek(FWxFilial( 'SG2' ) + SC2->C2_PRODUTO + SC2->C2_ROTEIRO ))
+
+                    While SG2->(!EoF()) .And. SG2->G2_FILIAL == FWxFilial( 'SG2' ) .And. SG2->G2_PRODUTO == SC2->C2_PRODUTO .And. SG2->G2_CODIGO == SC2->C2_ROTEIRO
+                        
+                        nCycleTime          := integracaoSyneco.U_zRcalc(SC2->C2_PRODUTO,1,SG2->G2_OPERAC)                        
+                        nCycleTime          := (Val(cValToChar(nCycleTime)) * 60)
+                        nSetup              := SG2->G2_SETUP * 60
+
+                        DbSelectArea("SB1")
+                        cDescPeca := Posicione( 'SB1' , 1, FWxFilial( 'SB1' ) + SC2->C2_PRODUTO, 'B1_DESC' )
+
+                        DbSelectArea("CTT")
+                        If !Empty(SC2->C2_CC)
+                            cCentroTrab := AllTrim(SC2->C2_CC) + " - " 
+                            cCentroTrab += AllTrim(Posicione( 'CTT' , 1, FWxFilial( 'CTT' ) + SC2->C2_CC, 'CTT_DESC01' ))
+                        EndIF
+
+                        If  SC2->C2_SEQUEN == StrZero(1,TamSX3("C2_SEQUEN")[1])                                         
+                            cProdAux3 := GetQtdPI(SC2->C2_PRODUTO,SC2->C2_REVISAO,SC2->C2_QUANT)
+                        else
+                            cProdAux3 := cValToChar(SC2->C2_QUANT)
+                        endif
+
+                        cChamada  := ValidaReativacao(cChamada, cOp)
+                        nHandle   := TcLink(cBcoDados, cServer, nPorta)
+                        
+                        If nHandle < 0
+                            cMsgResultado       := "Não foi possível conectar com o banco do Syneco - Erro: " + cValToChar(nHandle)
+                            lRet                := .f.
+                            MsgInfo(cMsgResultado, "Atenção")
+                        Else
+
+                            cQuery              := " INSERT INTO SSPImport ("                                                                       +CRLF
+                            cQuery              += " OP, OPER, SEQOPER, DESCOPER, "                                                                 +CRLF
+                            cQuery              += " CODPECA, DESCPECA, PRODAUX1, PRODAUX2, "                                                       +CRLF
+                            cQuery              += " PRODAUX3, PRODAUX4, MAQ, CENTROCUSTO, "                                                        +CRLF
+                            cQuery              += " PLANDTINI, PLANHRINI, PLANDTFIM, "                                                             +CRLF
+                            cQuery              += " PLANHRFIM, PLANQTY, CYCLEQTY, CYCLETIME, "                                                     +CRLF
+                            cQuery              += " PLANTMSETUP, ACAO, STATUS, "                                                                   +CRLF
+                            cQuery              += " DateProcess, DATA1, DATA2, DATA3, DATA4 "                                                      +CRLF
+                            cQuery              += " ) VALUES ( "                                                                                   +CRLF
+                            cQuery              += " '"+AllTrim(cOP)+"' , '"+SG2->G2_OPERAC+"' , '"+SG2->G2_OPERAC+"'"                              +CRLF
+                            cQuery              += " , '"+SG2->G2_DESCRI+"' , "                                                                     +CRLF
+                            cQuery              += " '"+AllTrim(SC2->C2_PRODUTO)+"' , '"+AllTrim(cDescPeca)+"' , "                                  +CRLF                                        
+                            cQuery              += " '"+AllTrim(SC2->C2_OBS)+"', '"+cValToChar(SG2->G2_LOTEPAD)+"', '"+cProdAux3+"', NULL, NULL ,"  +CRLF
+                            cQuery              += " '"+AllTrim(cCentroTrab)+"' , '"+DToc(SC2->C2_DATPRI)+"' ,"                                     +CRLF
+                            cQuery              += " '"+cValToChar(SC2->C2_ZZHRINI)+"' , "                                                          +CRLF
+                            cQuery              += " '"+DToc(SC2->C2_DATPRF)+"' , "                                                                 +CRLF
+                            cQuery              += " '"+cValToChar(SC2->C2_ZZHRFIM)+"' ,"                                                           +CRLF                      
+                            cQuery              += " "+cValToChar(SC2->C2_QUANT)+","                                                                +CRLF
+                            cQuery              += " "+cValToChar(SG2->G2_ZZCICLO)+", "+cValToChar(nCycleTime)+", "                                 +CRLF
+                            cQuery              += " "+cValToChar(nSetup)+", "+cChamada+", 0, "                                                     +CRLF
+                            cQuery              += " NULL, NULL,NULL, NULL, NULL "                                                                  +CRLF
+                            cQuery              += " ) "                                                                                            +CRLF
+                            
+                            If TcSqlExec(cQuery) < 0
+                                cMsgResultado       := "Falha: " + TCSQLError()
+                                lRet                := .F.
+                            Else
+                                If cChamada = "3"
+                                    cMsgResultado := "Excluida com sucesso." 
+                                Elseif cChamada = "2"
+                                    cMsgResultado := "Alterada com sucesso." 
+                                Else
+                                    cMsgResultado := "Integrado com sucesso."
+                                EndIf
+                            EndIf
+                        EndIf
+
+                        TcSetConn(nHndERP)
+                        TCUnlink(nHandle)
+                        integracaoSyneco.U_GravaLog(cOP+"-"+SG2->G2_OPERAC+": "+cMsgResultado, lRet, "1", "1", "E",cUserName,cOP)
+            
+                    SG2->(DbSkip())
+                    EndDo
+                EndIf
+            EndIf
+        SC2->(DbSkip())
+        EndDo
+    Endif
+
+    RestArea(aArea)
+Return
+
+
+
+/*
+    Validação para verificar se é uma reativação de OP
+*/
+Static Function ValidaReativacao(cChamada, cOp)
+    Local nHndERP       := AdvConnection()
+    Local cBcoDados     := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")   as character //Conexão no DbAccess com a outra base de Dados
+    Local cServer       := GetNewPar("MV_ZZIPSKA", "10.11.10.25")               as character //Servidor que está configurado o DbAccess
+    Local nPorta        := GetNewPar("MV_ZZPOSKA ",  9099 )                         as numeric //Porta da conexão do DbAccess
+    Local nHandle       := 0                            as numeric //Ponteiro que armazenará a conexão
+    Local cQuery        := ""                           as character             
+    Local cAlias        := ""                           as character
+    Default cChamada := "1"
+    Default cOp      := ""
+
+    nHandle  := TcLink(cBcoDados, cServer, nPorta)
+                        
+    If nHandle < 0
+        MsgInfo("Não foi possível conectar! Erro: " + cValToChar(nHandle), "Atenção") 
+    Else
+
+        cQuery := " SELECT TOP(1) * FROM SSPIMPORT                  "       + CRLF
+        cQuery += " WHERE 1=1                                       "       + CRLF
+        cQuery += " AND OP = '"+cOp+"'                              "       + CRLF
+        cQuery += " AND OPER = '"+SG2->G2_OPERAC+"'                 "       + CRLF
+        cQuery += " AND SEQOPER = '"+SG2->G2_OPERAC+"'              "       + CRLF
+        cQuery += " AND CODPECA = '"+SC2->C2_PRODUTO+"'             "       + CRLF
+        cQuery += " AND ACAO = 3                                    "       + CRLF
+        cQuery += "  ORDER BY ID DESC                               "       + CRLF
+
+        If TcSqlExec(cQuery) < 0
+            MsgInfo("Falha ao realizar a consulta: " + TCSQLError(), "Atenção")
+            TcSetConn(nHndERP)
+            TCUnlink(nHandle)
+        Else
+            cAlias := GetNextAlias()
+            PlsQuery(cQuery, cAlias)
+            DBSelectArea(cAlias)
+            (cAlias)->(DBGoTop())
+            If (cAlias)->(!EoF())                         
+                cChamada := "4"
+                TcSetConn(nHndERP)
+                TCUnlink(nHandle)
+            EndIf
+
+            if  Select(cAlias) > 0
+                (cAlias)->(DBCloseArea())
+            endif
+        EndIf
+    EndIf
+
+Return cChamada
+
+/*
+    funcao para retornar a quantidade de PI por fardo
+*/
+static function GetQtdPI(cProduto,cRevisao,nQuant)
+    Local nQtd := 0 as numeric    
+    Local cQuery := "" as character
+    Local cAliasTrb := "" as character    
+
+    // valida se a operacao do PI esta preenchida
+    cQuery += " SELECT
+    cQuery += "     G1_QUANT,G1_COMP
+    cQuery += " FROM
+    cQuery += "     "+RetSqlName("SG1")+"  SG1
+    cQuery += " WHERE
+    cQuery += "         SG1.G1_FILIAL   = '"+xFilial("SG1")+"'
+    cQuery += "     AND SG1.G1_COD      = '"+cProduto+"'
+    cQuery += "     AND SG1.G1_REVINI   = '"+cRevisao+"'
+    cQuery += "     AND SG1.D_E_L_E_T_  = ' '
+
+    TCQuery cQuery New Alias (cAliasTrb:=GetNextAlias())
+
+    While   !(cAliasTrb)->(EoF())
+        If Alltrim(POSICIONE("SB1",1,FWxFilial("SB1")+(cAliasTrb)->G1_COMP,"B1_TIPO")) == "PI"
+            nQtd += nQuant * (cAliasTrb)->G1_QUANT
+        Endif
+    (cAliasTrb)->(DBSkip())
+    end
+    (cAliasTrb)->(DBCloseArea())
+        
+return(cValToChar(nQtd))

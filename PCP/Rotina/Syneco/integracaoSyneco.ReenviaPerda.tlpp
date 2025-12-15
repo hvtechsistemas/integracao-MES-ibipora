@@ -1,0 +1,399 @@
+#INCLUDE "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+#Include "TBICONN.ch"
+
+namespace integracaoSyneco
+
+/*/{Protheus.doc} ReenviaPerda
+Função que refaz o Envio da perda no reprocesso do monitor integracao
+@type function
+@version 1.0 
+@author Bruno Aguiar
+@since	11/09/2024
+@return variant, Null
+
+    nChamada := 1 : Via Job
+    nChamada := 2 : Via Menu
+    nChamada := 3 : Via Reenvio
+/*/
+
+
+User Function ReenviaPerda(nChamada,cDeFilial, cAteFilial, cDeOP, cAteOP)
+
+    Alert("Utilizar a rotina Apontamento de OP")
+    
+    // Local cBcoDados     := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")   as character //Conexão no DbAccess com a outra base de Dados
+    // Local cServer       := GetNewPar("MV_ZZIPSKA", "10.11.10.25")                as character //Servidor que está configurado o DbAccess
+    // Local nPorta        := GetNewPar("MV_ZZPOSKA ",  9099 )                         as numeric //Porta da conexão do DbAccess
+    // Local nHandle       := 0                            as numeric //Ponteiro que armazenará a conexão
+    // Local nCont         := 0
+    // Local aDados        := {}
+    // Default nChamada    := 0
+    // Default cDeFilial   := ""
+    // Default cAteFilial  := ""
+    // Default cDeOp       := ""  
+    // Default cAteOp      := ""
+
+
+    // aDados := VerificaZC5(nChamada,cDeFilial, cAteFilial, cDeOP, cAteOP)
+
+    // If Len(aDados) <> 0
+        
+    //     For nCont := 1 To Len(aDados)
+    //         aItems := {}
+            
+    //         nHandle  := TcLink(cBcoDados, cServer, nPorta)
+
+    //         If nHandle < 0
+    //             If nChamada == 2 .Or. nChamada == 3
+    //                 MsgInfo("Não foi possível conectar! Erro: " + cValToChar(nHandle), "Atenção") 
+    //             Else
+    //                 ConOut("Não foi possível conectar! Erro: " + cValToChar(nHandle))
+    //             EndIf
+    //         Else 
+
+    //             cQuery := " SELECT * FROM SSPEXPORTCOMP CP  "                   + CRLF
+    //             cQuery += " INNER JOIN SSPEXPORTPROD PD     "                   + CRLF
+    //             cQuery += " ON CP.OP = PD.OP                "                   + CRLF
+    //             cQuery += " AND CP.OPER = PD.OPER           "                   + CRLF
+    //             cQuery += " AND CP.CNTREP = PD.CNTREP       "                   + CRLF
+    //             cQuery += " WHERE CP.OP = '" +AllTrim(aDados[nCont][1])+"' "    + CRLF
+    //             cQuery += " AND EVENT = '17'                "                   + CRLF
+    //             cQuery += " ORDER BY CP.OP, CP.OPER"                            + CRLF
+                
+    //             If TcSqlExec(cQuery) < 0
+    //                 If nChamada == 1
+    //                     ConOut("Falha ao realizar a consulta: " + TCSQLError())
+    //                 Else
+    //                     MsgInfo("Falha ao realizar a consulta: " + TCSQLError(), "Atenção")
+    //                 EndIf
+
+    //                 TCUnlink(nHandle)
+
+    //                 DbSelectArea("ZC5")
+    //                 DbSetOrder(1)
+    //                 If ZC5->(MsSeek(FWxFilial("ZC5")+AllTrim(aDados[nCont][1])+AllTrim(aDados[nCont][2])))
+    //                     RecLock('ZC5',.F.)
+    //                         ZC5->ZC5_STATUS := 'E' 
+    //                         ZC5->ZC5_MSGPRO := "Falha ao realizar a consulta: " + TCSQLError() 
+    //                     ZC5->(MsUnLock()) 
+    //                 EndIf
+
+    //             Else
+    //                 aItems := ExecutaPerdaSyneco(cQuery)
+    //                 TCUnlink(nHandle)
+    //                 cOPZC5  := AllTrim(aDados[nCont][1])
+    //                 cSeqZC5 := AllTrim(aDados[nCont][2])
+
+    //                 if  len(aItems) > 0
+
+    //                     // Realiza o bloqueio do semáforo
+    //                     if  !LockByName(cValToChar(aItems[nCont][11]),.T.,.T.,.F.)
+
+    //                         if  isBlind()
+    //                             ConOut("SEMAFARO - PROCESSO BLOQUEADO POR OUTRO EVENTO - OP ["+alltrim(aItems[nCont][2])+alltrim(aItems[nCont][4])+"]")                
+    //                         else
+    //                             FwAlertInfo("SEMAFARO - PROCESSO BLOQUEADO POR OUTRO EVENTO - OP ["+alltrim(aItems[nCont][2])+alltrim(aItems[nCont][4])+"]","ATENÇÃO")
+    //                         endif
+                            
+    //                         return()
+
+    //                     endif
+
+    //                     ExecAuto685(aItems , nChamada,  cOPZC5, cSeqZC5)
+
+    //                     //Libera bloqueio de semaforo
+    //                     UnLockByName(cValToChar(aItems[nCont][16]),.T.,.T.,.F.)
+
+    //                 else
+
+    //                     DbSelectArea("ZC5")
+    //                     DbSetOrder(1)
+    //                     If ZC5->(MsSeek(FWxFilial("ZC5")+AllTrim(aDados[nCont][1])+AllTrim(aDados[nCont][2])))
+    //                         RecLock('ZC5',.F.)
+    //                             ZC5->ZC5_STATUS := 'F' 
+    //                             ZC5->ZC5_MSGPRO := "Não foram encontrados perdas para esta OP" 
+    //                         ZC5->(MsUnLock()) 
+    //                     EndIf
+
+    //                 endif
+
+    //             EndIf
+    //         EndIf
+
+    //     Next nCont
+
+    // Else
+    //     If nChamada == 2 .Or. nChamada == 3
+    //         MsgInfo("Sem dados para processamento.")
+    //     Else
+    //         ConOut("Sem dados para processamento.")
+    //     EndIf
+    // EndiF
+
+Return
+
+
+/*
+    Verificação na tabela ZC5 -> OP x Etiquetas
+*/
+Static Function VerificaZC5(nChamada,cDeFilial, cAteFilial, cDeOP, cAteOP)
+    Local cQuery := ""
+    Local cAlias := GetNextAlias()
+
+    cQuery := "SELECT * "               +CRLF
+    cQuery += "FROM "+RetSqlTab("ZC5")  +CRLF
+    cQuery += "WHERE 1=1"               +CRLF
+    
+    If nChamada == 2 .Or. nChamada == 3
+        cQuery += "AND ZC5_FILIAL BETWEEN '" + cDeFilial + "' AND '" + cAteFilial + "'" +CRLF
+        cQuery += "AND ZC5_OP BETWEEN '" + cDeOP + "' AND '" + cAteOP + "'"             +CRLF
+    EndIf 
+
+    cQuery += "AND ZC5_STATUS <> 'F'"   +CRLF
+    cQuery += "AND ZC5_TIPAPO = '3'"    +CRLF
+    cQuery += "AND "+RetSqlDel("SC5")   +CRLF
+
+    PlsQuery(cQuery, cAlias)
+    DBSelectArea(cAlias)
+    (cAlias)->(DBGoTop())
+    If (cAlias)->(!EoF())
+        While (cAlias)->(!EoF())
+            Aadd(aDados,{(cAlias)->ZC5_OP, (cAlias)->ZC5_SEQ})
+        (cAlias)->(DbSkip())
+        EndDo
+    EndIf
+
+    If  Select(cAlias) > 0
+        (cAlias)->(DBCloseArea())
+    Endif
+
+
+Return aDados
+
+/*
+    Realizando ExecAuto MATA685 para apontamento de Perda
+*/
+Static Function ExecAuto685(aDados, nChamada,  cOPZC5, cSeqZC5)
+    Local aCab          := {}           as array
+    Local aItems        := {}           as array
+    Local nCont         := 0            as numeric
+    Local lRet          := .T.          as logical
+    Local cEmprLog      := ""           as character
+    Private lMsErroAuto := .F.          as logical
+    Private lMsHelpAuto := .T.          as logical
+    Default aDados      := {}
+    Default nChamada    := 0
+    Default cOPZC5      := ""
+    Default cSeqZC5     := ""
+
+
+    If nChamada == 2 .Or. nChamada == 3
+        cEmprLog := FWCodEmp()   
+    EndIf
+
+    For nCont := 1 To Len(aDados)
+        aCab    := {}
+        aItems  := {}
+
+        aCab:= {;
+                {"BC_OP"      ,aDados[nCont][2]     ,NIL},;
+                {"BC_OPERAC"  ,aDados[nCont][4]     ,NIL},;
+                {"BC_RECURSO" ,aDados[nCont][5]     ,NIL}}
+
+        Aadd(aItems,{{"BC_FILIAL"  ,aDados[nCont][1]     ,NIL},;
+                     {"BC_PRODUTO" ,aDados[nCont][3]     ,NIL},;
+                     {"BC_MOTIVO"  ,aDados[nCont][6]     ,NIL},;
+                     {"BC_QUANT"   ,aDados[nCont][8]     ,NIL}})
+
+        MSExecAuto({|x,y,z| MATA685(x,y,z)}, aCab, aItems, 3)
+
+        If lMsErroAuto
+            lRet    := .F.
+            cError  := MostraErro("/dirdoc", "error.log")
+            UpdateSSP(.F., cError, cOPZC5, cOperacao, aDados[nCont][9])
+            UpdateCOMP(.F., cOPZC5, cOperacao, aDados[nCont][9])
+            integracaoSyneco.U_GravaLog(cOPZC5+"-"+aDados[nCont][4]+": "+cError, lRet, "1", "7", "R", aDados[nCont][10],cOP)
+            DisarmTransaction()
+            Exit
+        Else
+            cMsgResultado := "Apontamento de Perda realizado com sucesso."
+            ConOut(Repl("-", 80))
+            ConOut(PadC("Apontamento de Perda realizado com sucesso", 80))
+            ConOut(PadC("Fim: " + Time(), 80))
+            ConOut(Repl("-", 80))
+            UpdateSSP(.T., "", cOPZC5, cOperacao, aDados[nCont][9])
+            UpdateCOMP(.T., cOPZC5, cOperacao, aDados[nCont][9])
+            integracaoSyneco.U_GravaLog(cOPZC5+"-"+aDados[nCont][4]+": "+cMsgResultado, lRet, "1", "7", "R", aDados[nCont][10],cOP)
+            
+        EndIf
+
+        DbSelectArea("ZC5")
+        DbSetOrder(1)
+        If ZC5->(MsSeek(FWxFilial("ZC5")+cOPZC5+cSeqZC5))
+            RecLock('ZC5',.F.)
+                ZC5->ZC5_STATUS := iif(lRet,"F","E") 
+                ZC5->ZC5_MSGPRO := iif(lRet,cMsgResultado,cError) 
+            ZC5->(MsUnLock()) 
+        EndIf
+
+    Next nCont
+    
+Return lRet
+
+
+/*
+    Executando a consulta realizada no Banco da SKA para retornar array com dados do ExecAuto
+*/
+Static Function ExecutaPerdaSyneco(cQuery)
+    Local cAlias        := GetNextAlias()   as character
+    Local aItems        := {}               as array
+    Default cQuery      := ""
+    
+
+    PlsQuery(cQuery, cAlias)
+    DBSelectArea(cAlias)
+    (cAlias)->(DBGoTop())
+
+    aItems := {}
+
+    If (cAlias)->(!EoF())
+        While (cAlias)->(!EoF())
+            Aadd(aItems,;
+                {   xFilial("SBC")                                                   ,;  //PadR("010"+ Substr((cAlias)->OP,1,1)      , TamSX3("BC_FILIAL")[1] )
+                    SubStr((cAlias)->OP,2,11)                                        ,;
+                    PadR((cAlias)->CODPECA                 , TamSX3("BC_PRODUTO")[1]),;
+                    PadR((cAlias)->OPER                    , TamSX3("BC_OPERAC")[1] ),;
+                    PadR((cAlias)->MAQ                     , TamSX3("H6_RECURSO")[1]),;
+                    PadR(Substr((cAlias)->COD,1,3)         , TamSX3("BC_MOTIVO")[1] ),;
+                    Substr((cAlias)->COD,4,6)                                        ,;
+                    (cAlias)->QUANT                                                  ,;
+                    (cAlias)->CNTREP                                                 ,;
+                    SubsTr((cAlias)->OPERADOR,1,26)                                  ,;
+                    (cAlias)->SSPExportCompID                                        })
+
+            (cAlias)->(DbSkip())
+        EndDo
+    Else
+        lRet := .F.
+        If nChamada == 1
+            ConOut("Não existem dados para serem integrados!")
+        Else
+            MsgInfo("Não existem dados para serem integrados!", "Atenção")
+        EndIf
+    EndIf
+    (cAlias)->(DBCloseArea())
+
+Return aItems
+
+
+/*
+    Atualizando status na tabela SKA
+*/
+Static Function UpdateSSP(lResultado, cError, cOP, cOperacao, nCNTREP)
+    Local nHndERP       := AdvConnection()
+    Local cBcoDados     := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")    as character //Conexão no DbAccess com a outra base de Dados
+    Local cServer       := GetNewPar("MV_ZZIPSKA", "10.11.10.25") as character //Servidor que está configurado o DbAccess
+    Local nPorta        := GetNewPar("MV_ZZPOSKA ",  9099 ) as numeric //Porta da conexão do DbAccess        
+    Local nHandle       := 0                            as numeric //Ponteiro que armazenará a conexão
+    Local cMsgResultado := ""                           as character
+    Local lRet          := .T.                          as logical
+    Default lResultado  := .T.            
+    Default cError      := ""            
+    Default cOP         := ""
+    Default cOperacao   := ""
+    Default nCNTREP     := 0
+
+    nHandle  := TcLink(cBcoDados, cServer, nPorta)
+
+     If nHandle < 0
+        If nChamada == 2 .Or. nChamada == 3
+            MsgInfo("Não foi possível conectar! Erro: " + cValToChar(nHandle), "Atenção") 
+        Else
+            ConOut("Não foi possível conectar! Erro: " + cValToChar(nHandle))
+        EndIf
+    Else 
+        cSql := "UPDATE SSPEXPORTPROD SET " + CRLF
+
+        If lResultado
+            cSql += "RETORNO = 0, "                        + CRLF
+            cSql += "STATUS  = 1, "                        + CRLF
+            cSql += "ERRO = 'Integrado com Sucesso.' "     + CRLF
+        Else
+            cSql += "RETORNO = 1, "                        + CRLF
+            cSql += "STATUS  = 0, "                        + CRLF
+            cSql += "ERRO = '" + FwNoAccent(Substr(cError,1,len(cError))) + "' " + CRLF
+        EndIf
+
+        cSql += "WHERE OP = '" + cOP + "'"                +  CRLF
+        cSql += "AND OPER = '" + cOperacao + "'"          +  CRLF
+        cSql += "AND CNTREP = " + cValToChar(nCNTREP)
+
+    
+        If TcSqlExec(cSql) < 0
+            cMsgResultado := "Falha ao realizar alteração: " + TCSQLError()
+            lRet    := .F.
+        Else
+            cMsgResultado := "Integrado com sucesso."
+        EndIf
+    EndIf
+    
+    TcSetConn(nHndERP)
+    TCUnlink(nHandle)
+
+Return
+
+/*
+    Atualizando status na tabela SKA
+*/
+Static Function UpdateCOMP(lResultado, cOP, cOperacao, nCNTREP)
+    Local nHndERP       := AdvConnection()              as numeric
+    Local cBcoDados     := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")    as character //Conexão no DbAccess com a outra base de Dados
+    Local cServer       := GetNewPar("MV_ZZIPSKA", "10.11.10.25") as character //Servidor que está configurado o DbAccess
+    Local nPorta        := GetNewPar("MV_ZZPOSKA ",  9099 ) as numeric //Porta da conexão do DbAccess                
+    Local nHandle       := 0                            as numeric //Ponteiro que armazenará a conexão
+    Local lRet          := .T.                          as logical
+    Default cOp         := ""
+    Default cOperacao   := ""
+    Default lResultado  := .T.
+    Default nCNTREP     := 0
+
+
+    nHandle  := TcLink(cBcoDados, cServer, nPorta)
+    
+    If nHandle < 0
+        If nChamada == 2 .Or. nChamada == 3
+            MsgInfo("Não foi possível conectar! Erro: " + cValToChar(nHandle), "Atenção") 
+        Else
+            ConOut("Não foi possível conectar! Erro: " + cValToChar(nHandle))
+        EndIf
+    Else 
+
+        cSql := "UPDATE SSPExportComp SET "             + CRLF
+
+        If lResultado 
+            cSql += "STATUS = 1"                        + CRLF
+        Else
+            cSql += "STATUS = 0"                        + CRLF
+        EndIf
+
+        cSql += "WHERE OP = '" + cOP + "'"              + CRLF
+        cSql += "AND OPER = '" + cOperacao + "'"        + CRLF
+        cSql += "AND CNTREP = " + cValToChar(nCNTREP)   + CRLF
+        cSql += "AND EVENT = '17'"
+
+        If TcSqlExec(cSql) < 0
+            cMsgResultado := "Falha ao realizar alteração: " + TCSQLError()
+            lRet    := .F.
+        Else
+            cMsgResultado := "Integrado com sucesso."
+        EndIf
+    EndIf
+
+    TcSetConn(nHndERP)
+    TCUnlink(nHandle)
+
+Return lRet
+

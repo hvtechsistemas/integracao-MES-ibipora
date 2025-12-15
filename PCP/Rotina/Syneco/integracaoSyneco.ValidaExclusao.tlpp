@@ -1,0 +1,65 @@
+#include "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+
+namespace integracaoSyneco
+
+/*/{Protheus.doc} ValidaExclusao
+Função que faz a validação se a OP pode ou não ser excluída
+@type function 
+@version 1.0
+@author Bruno Aguiar
+@since 01/10/2024
+@See MTA650E
+@return logical, Informando se está ou não em produção.
+/*/
+
+User Function ValidaExclusao()
+    Local nHndERP       := AdvConnection()
+    Local cBcoDados      := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")   as character 
+    Local cServer        := GetNewPar("MV_ZZIPSKA", "10.11.10.25")                as character 
+    Local nPorta         := GetNewPar("MV_ZZPOSKA ",  9099 )                         as numeric 
+    Local nHandle        := 0                            as numeric 
+    Local lRet           := .T.                          as logical
+    Local cOrdemP        := ""                           as character 
+    Local cQuery         := ""                           as character
+    Local cAlias         := GetNextAlias()
+
+    cOrdemP := Right(SC2->C2_FILIAL,1)+SC2->C2_NUM+SC2->C2_ITEM+SC2->C2_SEQUEN
+
+    nHandle  := TcLink(cBcoDados, cServer, nPorta)
+
+    If nHandle < 0
+        cMsgResultado := "Não foi possível conectar com o banco do Syneco - Erro: " + cValToChar(nHandle)
+        lRet := .f.
+        MsgInfo(cMsgResultado, "Atenção")     
+    Else 
+
+        cQuery := " SELECT                                       "    +CRLF
+        cQuery += " *                                            "    +CRLF  
+        cQuery += " FROM                                         "    +CRLF                       
+        cQuery += " SSPEXPORTPROD                                "    +CRLF
+        cQuery += " WHERE                                        "    +CRLF
+        cQuery += " OP =  '"+cOrdemP+"'                          "    +CRLF
+
+
+        If TcSqlExec(cQuery) < 0
+            TcSetConn(nHndERP)
+            TCUnlink(nHandle)
+        Else
+            PlsQuery(cQuery, cAlias)
+            DBSelectArea(cAlias)
+            (cAlias)->(DBGoTop())
+            If (cAlias)->(!EoF())  
+                MsgInfo("OP : " + cOrdemP + " se encontra em produção na Syneco.", "Atenção")
+               lRet := .F.
+            EndIf
+            
+            TcSetConn(nHndERP)
+            TCUnlink(nHandle)
+        EndIf
+
+    EndIf
+
+Return lRet

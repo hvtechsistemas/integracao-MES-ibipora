@@ -1,0 +1,322 @@
+#INCLUDE "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+#Include "TBICONN.ch"
+
+namespace integracaoSyneco
+ 
+/*/{Protheus.doc} ReenviaHrs
+Função que refaz o Envio das Horas Improdutivas no reprocesso do monitor integracao
+@type function
+@author Bruno Aguiar
+@since	06/09/2024
+
+    nChamada := 1 : Via Job
+    nChamada := 2 : Via Menu
+    nChamada := 3 : Via Reenvio
+*/
+ 
+User Function ReenviaHrs(nChamada,cDeFilial, cAteFilial, cDeOP, cAteOP)
+    Local nHndERP       := AdvConnection()              as numeric
+    Local cBcoDados     := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")    as character //Conexão no DbAccess com a outra base de Dados
+    Local cServer       := GetNewPar("MV_ZZIPSKA", "10.11.10.25") as character //Servidor que está configurado o DbAccess
+    Local nPorta        := GetNewPar("MV_ZZPOSKA ",  9099 ) as numeric //Porta da conexão do DbAccess    
+    Local nHandle       := 0                            as numeric //Ponteiro que armazenará a conexão
+    Local aItems        := {}                           as array
+    Local cCodigos      := GetNewPar("MV_ZZCOD", " ")   as character
+    Local cQuery        := ""                           as character
+    Local cAlias        := GetNextAlias()               as character
+    Private cEmprLog    := ""         
+    Default nChamada    := 0
+    Default cDeFilial   := ""
+    Default cAteFilial  := ""
+    Default cDeOp       := ""  
+    Default cAteOp      := ""
+
+    nHandle  := TcLink(cBcoDados, cServer, nPorta)
+
+    If nHandle < 0
+        If nChamada == 2 .Or. nChamada == 3
+            MsgInfo("Não foi possível conectar! Erro: " + cValToChar(nHandle), "Atenção") 
+        Else
+            ConOut("Não foi possível conectar! Erro: " + cValToChar(nHandle))
+        EndIf
+    Else 
+
+        cQuery := " SELECT SC.OP, SC.OPER, SC.CODPECA, SC.MAQ, SC.DATAINI,  "       + CRLF
+        cQuery += "     SC.DATAFIM, SC.HORAINI, SC.HORAFIM, SC.COD,         "       + CRLF
+        cQuery += "     SP.OPERADOR, SC.SSPExportCompID                     "       + CRLF
+        cQuery += " FROM SSPEXPORTCOMP SC                                   "       + CRLF
+        cQuery += " INNER JOIN SSPExportProd SP                             "       + CRLF                            
+        cQuery += " ON SC.OP = SP.OP                                        "       + CRLF
+        cQuery += " AND SC.OPER  = SP.OPER                                  "       + CRLF
+        cQuery += " AND SC.CNTREP = SP.CNTREP                               "       + CRLF
+        cQuery += " WHERE                                                   "       + CRLF
+        cQuery += " SC.STATUS =  0                                          "       + CRLF
+        cQuery += " AND COD NOT IN " + FORMATIN(cCodigos,"|")+"             "       + CRLF 
+
+        If nChamada == 1 
+            cQuery += " AND LEFT(SC.OP, 1) = '1'                            "        + CRLF
+        EndIf     
+
+        If nChamada == 2                
+                cQuery += " AND LEFT(SC.OP, 1) BETWEEN '" + Right(cDeFilial,1) + "'"        + CRLF
+                cQuery += "  AND  '" + Right(cAteFilial,1) + "'"                            + CRLF
+            If cDeFilial <> cAteFilial          
+                cQuery += " AND SUBSTRING(SC.OP,2,12) BETWEEN '" +AllTrim(cDeOP) + "'"      + CRLF
+                cQuery += "  AND '" + AllTrim(cAteOP)+ "' "                                 + CRLF
+            Else
+                cQuery += " AND SC.OP BETWEEN '" +Right(cDeFilial,1)+AllTrim(cDeOP) + "'"   + CRLF
+                cQuery += "  AND '" +Right(cDeFilial,1)+AllTrim(cAteOP)+ "' "               + CRLF
+            EndIf
+            
+        Elseif nChamada == 3
+            cQuery += " AND LEFT(SC.OP, 1) = '" + Right(ZC2->ZC2_FILIAL,1) +   "'"          + CRLF
+            cQuery += " AND SC.OP = '" + Substr(ZC2->ZC2_OP,4,15) +            "'"          + CRLF
+        EndIf
+
+        cQuery += " AND SC.EVENT <> 17"                                                     + CRLF
+        cQuery += " ORDER BY SC.OP, SC.OPER"                                                + CRLF
+
+        If TcSqlExec(cQuery) < 0
+            If nChamada == 1
+                ConOut("Falha ao realizar a consulta: " + TCSQLError())
+            Else
+                MsgInfo("Falha ao realizar a consulta: " + TCSQLError(), "Atenção")
+            EndIf
+            TcSetConn(nHndERP)
+            TCUnlink(nHandle)
+
+        Else
+
+            PlsQuery(cQuery, cAlias)
+            DBSelectArea(cAlias)
+            (cAlias)->(DBGoTop())
+            If (cAlias)->(!EoF())                         
+                
+                If nChamada == 2 .Or. nChamada == 3
+                    cEmprLog := FWCodEmp()   
+                EndIf
+                
+                aItems := ExecutaQuery(@cAlias, nChamada)
+                
+                TcSetConn(nHndERP)
+                TCUnlink(nHandle)
+
+                ProcessaDados(aItems)
+
+            EndIf
+            
+        EndIf
+    EndIf
+
+    If  Select(cAlias) > 0
+        (cAlias)->(DBCloseArea())
+    Endif
+
+    If nChamada == 2 .Or. nChamada == 3
+        MsgInfo("Retorno de Horas Improdutivas Finalizado.")
+    EndIf
+
+Return 
+
+
+Static Function ProcessaDados(aItems)
+    Default aItems  := {}
+    
+	Processa( { || ExecAuto(aItems) }, 'Carregando...', 'Aguarde...')
+
+Return 
+
+Static Function ExecutaQuery(cAlias, nChamada)    
+    Local lRet          := .T.        
+    Private aItems      := {}
+    Default cQuery      := ""
+    Default nChamada    := 1
+    
+    aItems := {}
+
+    If (cAlias)->(!EoF())
+        While (cAlias)->(!EoF())
+            Aadd(aItems,;
+            {xFilial("SH6")                                                     ,;  // 01 - Filial   PadR("010"+ Substr((cAlias)->OP,1,1)    , TamSX3("H6_FILIAL")[1] )
+             PadR(SubStr((cAlias)->OP,2,11)          , TamSX3("H6_OP")[1]     ) ,;  // 02 - OP
+             PadR((cAlias)->CODPECA                  , TamSX3("H6_PRODUTO")[1]) ,;  // 03 - Peca
+             PadR((cAlias)->MAQ                      , TamSX3("H6_RECURSO")[1]) ,;  // 04 - Maquina
+             dDataBase                                                          ,;  // 05 - Data
+             cToD((cAlias)->DATAINI)                                            ,;  // 06 - Data Inicial
+             cToD((cAlias)->DATAFIM)                                            ,;  // 07 - Data Final
+             (cAlias)->HORAINI                                                  ,;  // 08 - Hora Inicial  //PadR(Substr((cAlias)->HORAINI,1,5)      , TamSX3("H6_HORAINI")[1])
+             (cAlias)->HORAFIM                                                  ,;  // 09 - Hora Final    //PadR(Substr((cAlias)->HORAFIM,1,5)      , TamSX3("H6_HORAFIN")[1])
+             PadR(Substr((cAlias)->COD,1,3)          , TamSX3("H6_MOTIVO")[1] ) ,;  // 10 - Motivo Parada
+             PadR((cAlias)->OPER                     , TamSX3("H6_OPERAC")[1] ) ,;  // 11 - Operacao
+             SubsTr((cAlias)->DESCOPER,1,26)                                    ,;  // 12 - Descricao Operacao
+             (cAlias)->SSPExportCompID                                          })  // 13 - Id Syneco
+
+        (cAlias)->(DbSkip())
+        EndDo
+    Else
+        lRet := .F.
+        If nChamada == 1
+            ConOut("Não existem dados para serem integrados!")
+        Else
+            MsgInfo("Não existem dados para serem integrados!", "Atenção")
+        EndIf
+    EndIf
+    (cAlias)->(DBCloseArea())
+
+Return aItems
+
+Static Function ExecAuto(aItems)
+    Local aVetor        := {}       as array
+    Local nOpc          := 3        as numeric
+    Local nCont         := 1        as numeric
+    Local cMsgResultado := ""       as character
+    Local cOP           := ""       as character
+    Local cOperacao     := ""       as character
+    Local cHoraSoma     := ""       as character
+    Local cError        := ""       as character
+    Local cOPErro       := ""       as character
+    Local cFilBkp       := cFilAnt  as character
+    Local lRet          := .T.      as logical
+    
+    Private lMsErroAuto := .F.      as logical
+    Private lMsHelpAuto := .T.      as logical
+    
+    Default aItems      := {}
+
+    For nCont := 1 To Len(aItems)
+        If aItems[nCont][2] <> SubStr(cOPErro, 1, 11)
+
+
+            // Realiza o bloqueio do semáforo
+            if  !LockByName(cValToChar(aItems[nCont][13]),.T.,.T.,.F.) 
+
+                if  isBlind()
+                    ConOut("SEMAFARO - PROCESSO BLOQUEADO POR OUTRO EVENTO - OP ["+alltrim(aItems[nCont][1])+alltrim(aItems[nCont][2])+"]")                
+                else
+                    FwAlertInfo("SEMAFARO - PROCESSO BLOQUEADO POR OUTRO EVENTO - OP ["+alltrim(aItems[nCont][1])+alltrim(aItems[nCont][2])+"]","ATENÇÃO")
+                endif
+                
+                return()
+
+            endif
+
+            DbSelectArea("SC2")
+            SC2-> (DbSetOrder(1))
+            If SC2->(MsSeek(aItems[nCont][1] + aItems[nCont][2]))
+
+                cOP := (Right(SC2->C2_FILIAL,1)+SC2->C2_NUM+SC2->C2_ITEM+SC2->C2_SEQUEN)
+                cChvOp := SC2->C2_FILIAL+SC2->C2_NUM+SC2->C2_ITEM+SC2->C2_SEQUEN
+
+                cOperacao := aItems[nCont][11]
+                cHoraSoma := IncTime(PadR(aItems[nCont][9],TamSX3("H6_HORAFIN")[1]), 0, 1, 0)   //PadR(IncTime(aItems[nCont][9], 0, 1, 0),TamSX3("H6_HORAFIN")[1])                 
+
+                if  !(SC2->C2_FILIAL == cFilAnt)
+                    cFilAnt := SC2->C2_FILIAL
+                endif
+
+                aVetor := {;
+                        {"H6_FILIAL"  ,aItems[nCont][1]                                 ,NIL},;
+                        {"H6_OP"      ,aItems[nCont][2]                                 ,NIL},;
+                        {"H6_ZZOP"    ,aItems[nCont][2]                                 ,NIL},;
+                        {"H6_PRODUTO" ,aItems[nCont][3]                                 ,NIL},;
+                        {"H6_OPERAC"  ,aItems[nCont][11]                                ,NIL},;
+                        {"H6_ZZPROD"  ,aItems[nCont][3]                                 ,NIL},;
+                        {"H6_RECURSO" ,aItems[nCont][4]                                 ,NIL},;
+                        {"H6_DTAPONT" ,aItems[nCont][5]                                 ,NIL},;
+                        {"H6_DATAINI" ,aItems[nCont][6]                                 ,NIL},;
+                        {"H6_DATAFIN" ,aItems[nCont][7]                                 ,NIL},;
+                        {"H6_HORAINI" ,PadR(aItems[nCont][8],TamSX3("H6_HORAINI")[1])   ,NIL},;
+                        {"H6_HORAFIN" ,cHoraSoma                                        ,NIL},;
+                        {"H6_MOTIVO"  ,aItems[nCont][10]                                ,NIL},;
+                        {"H6_TIPO"    ,"I"                                              ,NIL},;                        
+                        {"H6_OPERADO" ,aItems[nCont][12]                                ,NIL},;
+                        {"H6_ZZHRINI" ,aItems[nCont][08]                                ,NIL},;
+                        {"H6_ZZHRFIM" ,aItems[nCont][09]                                ,NIL},;
+                        {"H6_OBSERVA" ,"INTEGRACAO SYNECO"                              ,NIL}}                        
+
+                lMsErroAuto := .F.
+                lRet        := .T.
+                aVetor := FWVetByDic(aVetor,"SH6",.F.)
+                MSExecAuto({|x,y| mata682(x,y)},aVetor, nOpc)
+
+                If lMsErroAuto
+                    lRet    := .F.
+                    cError  := MostraErro("/dirdoc", "error.log")
+                    cOPErro := AllTrim(aItems[nCont][2] + "-" + aItems[nCont][11])
+                    UpdateSSP(.F., cError, cOP, cOperacao, cValToChar(aItems[nCont][13]))
+                    integracaoSyneco.U_GravaLog(cOP+"-"+aItems[nCont][11]+": "+cError, lRet, "1", "6", "R",aItems[nCont][12],cOP)
+                    DisarmTransaction()
+                    Exit
+                Else
+                    cMsgResultado := "Apontamento de Horas Improdutivas realizado sucesso."
+                    ConOut(Repl("-", 80))
+                    ConOut(PadC("Apontamento de Horas Improdutivas realizado sucesso!", 80))
+                    ConOut(PadC("Fim: " + Time(), 80))
+                    ConOut(Repl("-", 80))
+                    UpdateSSP(.T., cMsgResultado, cOP, cOperacao, cValToChar(aItems[nCont][13]))
+                    integracaoSyneco.U_GravaLog(cOP+"-"+aItems[nCont][11]+": "+cMsgResultado, lRet, "1", "6", "R",aItems[nCont][12],cOP)                    
+                EndIf
+
+            Else
+                lRet := .F.
+                integracaoSyneco.U_GravaLog(cOPErro+": "+"OP NAO ENCONTRADA NO PROTHEUS", lRet, "1", "6", "R",aItems[nCont][12],cOP)
+                UpdateSSP(.F., cError, cOP, aItems[nCont][11], cValToChar(aItems[nCont][13]))
+
+            EndIf
+
+        EndIf
+
+        //Libera bloqueio de semaforo
+        UnLockByName(cValToChar(aItems[nCont][13]),.T.,.T.,.F.) 
+
+    Next nCont
+
+    if  !(cFilBkp == cFilAnt)
+        cFilAnt := cFilBkp
+    endif
+
+Return
+
+Static Function UpdateSSP(lResultado, cError,  cOP, cOperacao, cIdComp)
+    Local cBcoDados     := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")    as character //Conexão no DbAccess com a outra base de Dados
+    Local cServer       := GetNewPar("MV_ZZIPSKA", "10.11.10.25") as character //Servidor que está configurado o DbAccess
+    Local nPorta        := GetNewPar("MV_ZZPOSKA ",  9099 ) as numeric //Porta da conexão do DbAccess        
+    Local nHandle       := 0                            as numeric //Ponteiro que armazenará a conexão
+    Local cMsgResultado := ""                           as character
+    Local lRet          := .T.                          as logical
+    Default lResultado  := .T.            
+    Default cError      := ""            
+    Default cOP         := ""
+    Default cIdComp     := ""
+
+    nHandle  := TcLink(cBcoDados, cServer, nPorta)
+    
+    If nHandle < 0
+       MsgInfo("Não foi possível conectar! Erro: " + cValToChar(nHandle), "Atenção") 
+    Else 
+
+        cSql := "UPDATE SSPEXPORTCOMP SET " + CRLF
+
+        If lResultado
+            cSql += "STATUS = 1 " + CRLF
+        Else
+            cSql += "STATUS = 0 " + CRLF
+        EndIf
+
+        cSql += " WHERE SSPExportCompID = '"+cIdComp+"'"
+
+
+        If TcSqlExec(cSql) < 0
+            cMsgResultado := "Falha ao realizar alteração: " + TCSQLError()
+            lRet    := .F.
+        Else
+            cMsgResultado := "Integrado com sucesso."
+        EndIf
+    EndIf
+
+    TCUnlink(nHandle)
+
+Return

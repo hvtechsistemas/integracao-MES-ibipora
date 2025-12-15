@@ -1,0 +1,89 @@
+#include "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+
+namespace integracaoSyneco
+
+/*/{Protheus.doc} GravaLog
+Função que grava o Log gerado na integração da OP
+@type function
+@version 1.0
+@author Bruno
+@since 06/09/2024
+@return variant, Null
+/*/
+
+User Function GravaLog(cMsgResultado, lRet, cOperacao, cRotina, cEvento, cOperador,cOP)  
+    Local cSequencia            := ""               as character 
+    Local cSql                  := ""               as character 
+    Local cAlias                := GetNextAlias()   as character
+    Default cMsgResultado       := ""           
+    Default lRet                := .T.
+    Default cOperacao           := ""
+    Default cRotina             := ""
+    Default cEvento             := ""
+    Default cOperador           := ""
+    Default cOP                 := ""
+
+    DbSelectArea('ZC3') 
+    
+    cSql := SqlSequencia(cOp, cRotina)
+	PlsQuery(cSql, cAlias)
+    DBSelectArea(cAlias)
+    (cAlias)->(DBGoTop())
+    cSequencia := (cAlias)->ZC3_SEQ
+    (cAlias)->(DbCloseArea())
+
+
+    DbSelectArea('ZC2')
+    ZC2->(DbSetOrder(1))
+
+    If ZC2->(DbSeek(FWxFilial('ZC2')+AvKey(cOP, "ZC2_OP")+AvKey(cRotina, "ZC2_ROTINA")))
+        ZC2->(Reclock('ZC2',.F.))
+            ZC2->ZC2_STATUS = Iif( lRet, "I", "E" )
+            ZC2->ZC2_ROTINA = cRotina
+        ZC2->(MsUnLock())
+    Else
+        ZC2->(Reclock('ZC2',.T.))
+            ZC2->ZC2_FILIAL := xFilial('ZC2')
+            ZC2->ZC2_OP     := AllTrim(cOP)
+            ZC2->ZC2_STATUS := Iif( lRet, "I", "E" )
+            ZC2->ZC2_EVENTO := cEvento
+            ZC2->ZC2_ROTINA := cRotina
+            ZC2->ZC2_DATA   := Date()
+        ZC2->(MsUnLock())
+    EndIf
+
+    ZC3->(Reclock('ZC3',.T.))
+        ZC3->ZC3_FILIAL := xFilial('ZC2')
+        ZC3->ZC3_OP     := AllTrim(cOP)
+        ZC3->ZC3_SEQ    := IIF(!Empty(cSequencia), Soma1(cSequencia), "001")
+        ZC3->ZC3_OPERAC := cOperacao
+        ZC3->ZC3_ROTINA := cRotina
+        ZC3->ZC3_DATA   := Date()
+        ZC3->ZC3_HORA   := Time()
+        ZC3->ZC3_USER   := cOperador
+        ZC3->ZC3_MSGINT := cMsgResultado
+    ZC3->(MsUnLock())
+
+    // MsgInfo(cMsgResultado, "Resultado")
+
+Return 
+
+
+Static Function SqlSequencia(cOP, cRotina)
+    Local cSql      := ""     as character
+    Default cOp     := ""
+    Default cRotina := ""
+
+    cSql := " SELECT MAX(ZC3_SEQ) AS ZC3_SEQ"	+CRLF
+	cSql += " FROM "+retSqlTab("ZC3")    		+CRLF
+	cSql += " WHERE "							+CRLF
+	cSql += " 1=1 "								+CRLF
+	cSql += "AND "+retSqlFil("ZC3")				+CRLF
+	cSql += "AND ZC3_OP = '"+cOP+"' "           +CRLF
+	cSql += "AND ZC3_ROTINA = '"+cRotina+"' "   +CRLF
+	cSql += "AND "+retSqlDel("ZC3")				+CRLF
+
+Return cSql

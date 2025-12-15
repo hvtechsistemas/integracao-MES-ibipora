@@ -1,0 +1,71 @@
+#include "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+
+namespace integracaoSyneco
+
+/*/{Protheus.doc} InsereLoteMateriaPrima
+Função que realiza a integração do Lote de Matéria Prima com o Syneco tabela SSPImportBatch.
+@type function
+@version 1.0
+@author Bruno Aguiar
+@since 10/09/2024
+@See MA650EMP, MTA381GRV
+@return variant, Nul
+/*/
+
+User Function InsereLoteMateriaPrima(aDet, cOP, cCodMaq)
+    Local aArea         := GetArea()
+    Local nPosCod       := 0                            as numeric    
+    Local nPosQtd       := 0                            as numeric 
+    Local nPosLote      := 0                            as numeric 
+    Local nRecord       := 0                            as numeric 
+    Local cMsgResultado := ""                           as character
+    Local cBcoDados     := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")   as character 
+    Local cServer       := GetNewPar("MV_ZZIPSKA", "10.11.10.25")                as character 
+    Local nPorta        := GetNewPar("MV_ZZPOSKA ",  9099 )                         as numeric 
+    Local nHandle       := 0                            as numeric 
+    Default aDet        := {} 
+    Default cOP         := ""         
+    Default cCodMaq     := ""                 
+
+    nHandle:= TcLink(cBcoDados, cServer, nPorta) 
+        
+    If nHandle < 0
+        cMsgResultado       := "Não foi possível conectar com o banco do Syneco - Erro: " + cValToChar(nHandle)
+        lRet                := .f.
+        MsgInfo(cMsgResultado, "Atenção")
+    Else
+        
+        For nRecord := 1 To Len(aDet) 
+            nPosCod     := ascan(aDet[nRecord], {|x|x[1] = 'D3_COD'}) 
+            nPosQtd     := ascan(aDet[nRecord], {|x|x[1] = 'D3_QUANT'}) 
+            nPosLote    := ascan(aDet[nRecord], {|x|x[1] = 'D3_LOTECTL'}) 
+            
+            cQuery := " INSERT INTO SSPCCMImportBatch (" 
+            cQuery += " CODE, CODEMATERIAL,QUANTITY,ISENABLED,ACAO,MAQ" 
+            cQuery += " ) VALUES ( " 
+            cQuery += " '"+aDet[nRecord][nPosLote]+"','"+aDet[nRecord][nPosCod]+"', '"+aDet[nRecord][nPosQtd]+"','1','1',"+ValToSql(cCodMaq)+" 
+            cQuery += " ) " 
+            
+            
+            If TcSqlExec(cQuery) < 0
+                cMsgResultado       := "Falha na Integração do Lote: " + TCSQLError()
+                lRet                := .F.
+            Else
+                cMsgResultado       := "Lote Integrado com sucesso."
+                
+                integracaoSyneco.U_GravaLog(cOP+": "+cMsgResultado, lRet, "1", "3", "E",cUserName,cOP)
+            EndIf
+            
+        Next nRecord  
+        
+    Endif 
+
+
+    TCUnlink(nHandle) 
+    
+    RestArea(aArea) 
+
+Return

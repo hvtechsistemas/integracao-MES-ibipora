@@ -1,0 +1,48 @@
+#include "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+
+namespace integracaoSyneco
+
+/*/{Protheus.doc} zRcalc
+Rotina que faz o Calulo de quanto tempo foi utilizado do recurso conforme o tempo cadastrado na SG2
+@type function
+@version 1.0
+@author Bruno Aguiar
+@since 04/09/2024
+@param cProd, character, Produto
+@param nQtd, numeric, Quantidade
+@param cOperac, character, Operacao
+@return variant, Tempo
+/*/
+
+User Function zRcalc(cProd,nQtd,cOperac)
+   Local aAreaSG2    := SG2->(GetArea())
+   Local aAreaSB1    := SB1->(GetArea())
+   Local aAreaSH1    := SH1->(GetArea())
+   local nTempSet    := 0
+   Private cTipoTemp := GetNewPar("MV_TPHR","N")
+   Default cProd     := ""
+   Default cOperac   := ""
+   Default nQtd      := 0
+   
+
+   If SG2->G2_TEMPAD <> 0
+      If SG2->G2_TPOPER $ "1" .Or. Empty(SG2->G2_TPOPER)
+			nTempSet          := Round( (nQtd *(IIf( SG2->G2_TEMPAD == 0, 1,A690HoraCt(SG2->G2_TEMPAD)) / IIf( SG2->G2_LOTEPAD == 0, 1, SG2->G2_LOTEPAD ))) ,5)
+		ElseIf SG2->G2_TPOPER == "4"
+			nQtdAloc          := nQtd % IIf(SG2->G2_LOTEPAD == 0, 1, SG2->G2_LOTEPAD)
+			nQtdAloc          := Int(nQtd)+If(nQtdAloc>0,IIf(SG2->G2_LOTEPAD == 0, 1, SG2->G2_LOTEPAD)-nQtdAloc,0)
+			nTempSet          := Round(nQtdAloc * ( IIf( SG2->G2_TEMPAD == 0, 1,A690HoraCt(SG2->G2_TEMPAD)) / IIf( SG2->G2_LOTEPAD == 0, 1, SG2->G2_LOTEPAD ) ),5)
+		ElseIf SG2->G2_TPOPER == "2" .Or. SG2->G2_TPOPER == "3"
+			nTempSet          := IIf( SG2->G2_TEMPAD == 0 , 1 ,A690HoraCt(SG2->G2_TEMPAD) )
+		EndIf
+
+   EndIf
+   
+   RestArea(aAreaSG2)
+   RestArea(aAreaSB1)
+   RestArea(aAreaSH1)
+
+Return nTempSet

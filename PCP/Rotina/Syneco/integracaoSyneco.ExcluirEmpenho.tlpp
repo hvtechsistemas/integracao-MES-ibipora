@@ -1,0 +1,162 @@
+#include "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+
+namespace integracaoSyneco
+
+/*/{Protheus.doc} ExcluirEmpenho
+Função que verifica para realizar a exclusao do Empenho
+@type function
+@version 1.0
+@author Bruno Aguiar
+@since 09/09/2024
+@See MTA381GRV
+@return variant, Null
+/*/
+
+User Function ExcluirEmpenho()
+    Local nHndERP           := AdvConnection()              as numeric
+    Local cBcoDados         := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")   as character 
+    Local cServer           := GetNewPar("MV_ZZIPSKA", "10.11.10.25")                as character 
+    Local nPorta            := GetNewPar("MV_ZZPOSKA ",  9099 )                         as numeric 
+    Local nHandle           := 0                            as numeric 
+    Local nCont             := 0                            as numeric
+    Local lRet              := .T.                          as logical
+    Local aArea             := GetArea()                    as array
+    Local cAlias            := GetNextAlias()               as character
+    Local aDados            := {}                           as array
+    Local nPosProd          := 0                            as numeric
+    Local nPosProdPai       := 0                            as numeric
+    Private cOP             := " "                          as character
+    Private cMsgResultado   := ""                           as character
+
+    nPosProd    := aScan(aHeader,{|x| AllTrim(x[2])=="D4_COD"}) 
+    nPosProdPai := aScan(aHeader,{|x| AllTrim(x[2])=="D4_PRODUTO"})
+    cOP         := Right(SD4->D4_FILIAL,1)+AllTrim(SD4->D4_OP) 
+
+    For nCont := 1 To Len(aCols)
+
+        nHandle             := TcLink(cBcoDados, cServer, nPorta)
+
+        If nHandle < 0
+            cMsgResultado       := "Não foi possível conectar com o banco do Syneco - Erro: " + cValToChar(nHandle)
+            lRet                := .F.
+            MsgInfo(cMsgResultado, "Atenção")
+            Exit
+        Else
+
+            cQuery              := " SELECT "                                                       +CRLF
+            cQuery              += " TOP(1) *, "                                                    +CRLF
+            cQuery              += " CAST(DESCRIPTION AS VARCHAR(100)) AS DESCRIPTION_VARCHAR "     +CRLF
+            cQuery              += " FROM "                                                         +CRLF
+            cQuery              += " SSPCCMImportRawMaterial "                                      +CRLF
+            cQuery              += " WHERE 1=1"                                                     +CRLF
+            cQuery              += " AND OP = '"+cOP+"' "                                           +CRLF
+            cQuery              += " AND CODPECA = '"+aCols[1][nPosProdPai]+"' "                    +CRLF
+            cQuery              += " AND CODE = '"+aCols[nCont][nPosProd]+"' "                      +CRLF
+            cQuery              += "AND ACAO <> 3 "                                                 +CRLF
+            cQuery              += "ORDER BY SSPImportRawMaterialID DESC  "                         +CRLF
+
+            If TcSqlExec(cQuery) < 0
+                TcSetConn(nHndERP)
+                TCUnlink(nHandle)
+                lRet := .F.
+                cMsgResultado := "Empenho não encontrado."
+            Else
+                PlsQuery(cQuery, cAlias)
+                DBSelectArea(cAlias)
+                (cAlias)->(DBGoTop())
+                While (cAlias)->(!EOF())
+                    Aadd(aDados,;
+                        {AllTrim((cAlias)->OP)                  ,; //1
+                        AllTrim((cAlias)->OPER)                 ,; //2
+                        AllTrim((cAlias)->CODPECA)              ,; //3
+                        AllTrim((cAlias)->CODE)                 ,; //4
+                        AllTrim((cAlias)->DESCRIPTION)          ,; //5
+                        AllTrim((cAlias)->VALIDATEQUANTITY)     ,; //6   
+                        (cAlias)->QTYPERUNIT                    ,; //7
+                        (cAlias)->NEEDCONFIRMATION              ,; //8
+                        (cAlias)->RESERVEONASSOCIATION          ,; //9
+                        (cAlias)->TYPEREQUEST                   ,; //10
+                        AllTrim((cAlias)->UNIT)                 ,; //11
+                        AllTrim((cAlias)->ACAO)                 ,; //12
+                        AllTrim((cAlias)->STATUS) })               //13
+                (cAlias)->(DbSkip())                  
+                EndDo
+                
+                TcSetConn(nHndERP)
+                TCUnlink(nHandle)
+            EndIf
+        EndIf
+
+    Next nCont
+
+    If Len(aDados) > 0
+        RealizaExclusao(aDados)
+    Else
+        lRet := .F.
+        cMsgResultado := "Empenho não encontrado."
+    EndIf
+        
+    RestArea(aArea)
+       
+Return
+
+/*/{Protheus.doc} RealizaExclusao
+Função que realiza a Exclusao na tabela SSPImportRawMaterial Syneco
+@type function
+@version 1.0
+@author Bruno Aguiar
+@since 09/09/2024
+@return variant, Null
+/*/
+Static Function RealizaExclusao(aDados)
+    Local lRet          := .T.                          as logical
+    Local cBcoDados     := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")   as character 
+    Local cServer       := GetNewPar("MV_ZZIPSKA", "10.11.10.25")                as character 
+    Local cMsgResultado := ""                            as character
+    Local nPorta        := GetNewPar("MV_ZZPOSKA ",  9099 )                         as numeric 
+    Local nHandle       := 0                            as numeric 
+    Local nCont         := 0                            as numeric
+    Default aDados      := {}                         
+
+    cOP := Right(SD4->D4_FILIAL,1)+AllTrim(SD4->D4_OP) 
+
+    For nCont := 1 to Len(aDados)
+
+        nHandle             := TcLink(cBcoDados, cServer, nPorta)
+
+        If nHandle < 0
+            cMsgResultado       := "Não foi possível conectar com o banco do Syneco - Erro: " + cValToChar(nHandle)
+            lRet                := .F.
+            MsgInfo(cMsgResultado, "Atenção")
+        Else
+
+            cQuery := " INSERT INTO SSPCCMImportRawMaterial ("
+            cQuery += " OP, OPER, "
+            cQuery += " CODPECA, CODE, DESCRIPTION, VALIDATEQUANTITY, QTYPERUNIT, "
+            cQuery += " NEEDCONFIRMATION, RESERVEONASSOCIATION, TYPEREQUEST, UNIT, "
+            cQuery += " ACAO"       
+            cQuery += " ) VALUES ( "
+            cQuery += " '"+aDados[nCont][1]+"', '"+aDados[nCont][2]+"', "
+            cQuery += " '"+aDados[nCont][3]+"','"+aDados[nCont][4]+"','"+aDados[nCont][5]+"', "
+            cQuery += " '"+aDados[nCont][6]+"', '"+cValToChar(aDados[nCont][7])+"', '"+cValToChar(aDados[nCont][8])+"', 
+            cQuery += " '"+cValToChar(aDados[nCont][9])+"', '"+cValToChar(aDados[nCont][10])+"', '"+aDados[nCont][11]+"', '3')"
+
+            If TcSqlExec(cQuery) < 0
+                cMsgResultado       := "Falha no Empenho: " + TCSQLError()
+                lRet                := .F.
+            Else
+                cMsgResultado       := "Empenho Excluido com sucesso."
+            EndIf
+
+        Endif
+
+        TCUnlink(nHandle)
+  
+        integracaoSyneco.U_GravaLog(cOP+": "+cMsgResultado, lRet, "3", "2", "E",cUserName, cOP)
+    Next nCont
+
+
+Return

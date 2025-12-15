@@ -1,0 +1,163 @@
+#include "totvs.ch"
+#INCLUDE 'Protheus.ch'
+#INCLUDE 'rwmake.ch'
+#INCLUDE 'TOPCONN.CH'
+
+namespace integracaoSyneco
+
+/*/{Protheus.doc} ExcluirOp
+Função que verifica para realizar a exclusao da OP
+@type function
+@version 1.0
+@author Bruno Aguiar
+@since 04/09/2024
+@See MTA650AE
+@return variant, Null
+/*/
+User Function ExcluirOp()
+    Local aArea             := GetArea()
+    Local nHndERP           := AdvConnection()
+    Local cBcoDados         := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")    as character //Conexão no DbAccess com a outra base de Dados
+    Local cServer           := GetNewPar("MV_ZZIPSKA", "10.11.10.25")                as character //Servidor que está configurado o DbAccess
+    Local nPorta            := GetNewPar("MV_ZZPOSKA ",  9099 )                         as numeric //Porta da conexão do DbAccess
+    Local nHandle           := 0                            as numeric //Ponteiro que armazenará a conexão
+    Local lRet              := .T.                          as logical
+    Local cMsgResultado     := ""                           as character
+    Local cDescPeca         := ""                           as character
+    Local cAlias            := GetNextAlias()               as character
+    Local aDados            := {}                           as array
+    Private cOP             := ""                           as character 
+    Private lMistralSKA     := .T.                          as logical //Identificador da função para o Cleber. 
+
+   cOP      := Right(SC2->C2_FILIAL,1)+SC2->C2_NUM+SC2->C2_ITEM+SC2->C2_SEQUEN
+   cProduto := SC2->C2_PRODUTO
+
+    
+    nHandle  := TcLink(cBcoDados, cServer, nPorta)
+
+    If nHandle < 0
+        cMsgResultado := "Não foi possível conectar com o banco do Syneco - Erro: " + cValToChar(nHandle)
+        lRet := .f.
+        MsgInfo(cMsgResultado, "Atenção")     
+    Else 
+
+        cQuery  := "SELECT * FROM SSPIMPORT"            + CRLF
+        cQuery  += "WHERE 1=1  "                        + CRLF
+        cQuery  += "AND OP = '"+ cOP + "' "             + CRLF
+        cQuery  += "AND CODPECA = '"+ cProduto + "' "   + CRLF
+        cQuery  += "AND ACAO <> 3 "                     + CRLF
+        
+        If TcSqlExec(cQuery) < 0
+            TcSetConn(nHndERP)
+            TCUnlink(nHandle)
+        Else
+            PlsQuery(cQuery, cAlias)
+            DBSelectArea(cAlias)
+            (cAlias)->(DBGoTop())
+            While (cAlias)->(!EOF())
+                cDescPeca := Posicione('SB1', 1, FWxFilial('SB1') + (cAlias)->CODPECA, 'B1_DESC')
+                Aadd(aDados,;
+                    {AllTrim((cAlias)->OP)          ,; //1
+                    AllTrim((cAlias)->OPER)         ,; //2
+                    AllTrim((cAlias)->SEQOPER)      ,; //3
+                    AllTrim((cAlias)->DESCOPER)     ,; //4
+                    AllTrim((cAlias)->CODPECA)      ,; //5
+                    AllTrim(cDescPeca)              ,; //6   
+                    AllTrim((cAlias)->MAQ)          ,; //7
+                    AllTrim((cAlias)->CENTROCUSTO)  ,; //8
+                    AllTrim((cAlias)->PLANDTINI)    ,; //9
+                    AllTrim((cAlias)->PLANHRINI)    ,; //10
+                    AllTrim((cAlias)->PLANDTFIM)    ,; //11
+                    AllTrim((cAlias)->PLANHRFIM)    ,; //12
+                    (cAlias)->PLANQTY               ,; //13
+                    (cAlias)->CYCLEQTY              ,; //14
+                    (cAlias)->CYCLETIME             ,; //15
+                    (cAlias)->PLANTMSETUP           ,; //16
+                    AllTrim((cAlias)->ACAO)         ,; //17
+                    AllTrim((cAlias)->STATUS)       }) //18
+            (cAlias)->(DbSkip())                  
+            EndDo
+
+            If Len(aDados) > 0
+                RealizaExclusao(aDados)
+            EndIf
+
+            TcSetConn(nHndERP)
+            TCUnlink(nHandle)
+        EndIf
+    
+    Endif
+
+
+    RestArea(aArea)
+
+Return
+
+/*/{Protheus.doc} RealizaExclusao
+Função que realiza a Exclusao na tabela SSPImport Syneco
+@type function
+@version 1.0
+@author Bruno Aguiar
+@since 04/09/2024
+@return variant, Null
+/*/
+Static Function RealizaExclusao(aDados)
+    Local nHndERP           := AdvConnection()              as numeric
+    Local cBcoDados         := GetNewPar("MV_ZZCOSKA ", "MSSQL/CCM_SYNECO_HOMOLOG")   as character //Conexão no DbAccess com a outra base de Dados
+    Local cServer           := GetNewPar("MV_ZZIPSKA", "10.11.10.25")               as character //Servidor que está configurado o DbAccess
+    Local nPorta            := GetNewPar("MV_ZZPOSKA ",  9099 )                         as numeric //Porta da conexão do DbAccess
+    Local nHandle           := 0                            as numeric //Ponteiro que armazenará a conexão
+    Local lRet              := .T.                          as logical
+    Local cMsgResultado     := ""                           as character
+    Local nCont             := 1                            as numeric
+    Private cOP             := ""                           as character
+
+   For nCont := 1 to Len(aDados)
+    
+        nHandle  := TcLink(cBcoDados, cServer, nPorta)
+        
+        If nHandle < 0                        
+            cMsgResultado := "Não foi possível conectar com o banco do Syneco - Erro: " + cValToChar(nHandle)
+            lRet := .f.
+            MsgInfo(cMsgResultado, "Atenção")                                                
+        Else 
+
+            cQuery := " INSERT INTO SSPImport ("                                                                            +CRLF
+            cQuery += " OP, OPER, SEQOPER, DESCOPER, "                                                                      +CRLF
+            cQuery += " CODPECA, DESCPECA, PRODAUX1, PRODAUX2, "                                                            +CRLF
+            cQuery += " PRODAUX3, PRODAUX4, MAQ, CENTROCUSTO, "                                                             +CRLF
+            cQuery += " PLANDTINI, PLANHRINI, PLANDTFIM, "                                                                  +CRLF
+            cQuery += " PLANHRFIM, PLANQTY, CYCLEQTY, CYCLETIME, "                                                          +CRLF
+            cQuery += " PLANTMSETUP, ACAO, STATUS, "                                                                        +CRLF
+            cQuery += " DateProcess, DATA1, DATA2, DATA3, DATA4 "                                                           +CRLF
+            cQuery += " ) VALUES ( "                                                                                        +CRLF
+            cQuery += " '"+aDados[nCont][1]+"', '"+aDados[nCont][2]+"', '"+aDados[nCont][3]+"', '"+aDados[nCont][4]+"', "   +CRLF
+            cQuery += " '"+aDados[nCont][5]+"', '"+aDados[nCont][6]+"', "                                                   +CRLF
+            cQuery += " NULL, NULL, NULL, NULL, '"+aDados[nCont][7]+"', "                                                   +CRLF
+            cQuery += " '"+aDados[nCont][8]+"', '"+aDados[nCont][9]+"',"                                                   +CRLF
+            cQuery += " '"+aDados[nCont][10]+"', "                                                                          +CRLF
+            cQuery += " '"+aDados[nCont][11]+"', "                                                                          +CRLF
+            cQuery += " '"+aDados[nCont][12]+"',"                                                                           +CRLF                                           
+            cQuery += "  "+cValToChar(aDados[nCont][13])+","                                                                +CRLF
+            cQuery += " "+cValToChar(aDados[nCont][14])+", "+cValToChar(aDados[nCont][15])+", "                             +CRLF 
+            cQuery += " "+cValToChar(aDados[nCont][16])+", 3, 0, "                                                          +CRLF
+            cQuery += " NULL, NULL,NULL, NULL, NULL "                                                                       +CRLF
+            cQuery += " ) "   
+
+
+            If TcSqlExec(cQuery) < 0
+                cMsgResultado := "Falha: " + TCSQLError()
+                lRet := .F.
+            Else
+                lRet := .T.
+                cMsgResultado := "Excluida com sucesso." 
+            EndIf
+       
+            TcSetConn(nHndERP)
+            TCUnlink(nHandle)
+            integracaoSyneco.U_GravaLog(aDados[nCont][1]+"-"+aDados[nCont][2]+": "+cMsgResultado, lRet, "3", "1", "E",cUserName,cOP)
+
+        Endif
+    Next nCont
+
+Return
